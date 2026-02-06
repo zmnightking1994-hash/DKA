@@ -1,84 +1,37 @@
 import streamlit as st
-from fpdf import FPDF
-import io
-from datetime import datetime
 
 # --- إعدادات الصفحة ---
 st.set_page_config(page_title="BSPED DKA Manager", layout="wide", page_icon="🩺")
 
-# --- دالة إنشاء ملف PDF ---
-class DKA_PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 15)
-        self.cell(0, 10, 'DKA Management Plan (BSPED 2021/2024)', 0, 1, 'C')
-        self.set_font('Arial', 'I', 10)
-        self.cell(0, 10, f'Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 1, 'C')
-        self.ln(10)
+# --- واجهة التطبيق الرئيسية ---
+st.title("🩺 تطبيق التدبير المثالي للحماض الكيتوني السكري (DKA)")
+st.markdown("##### مستوحى من دليل جمعية BSPED 2021/2024 للأطفال والمراهقين")
 
-def create_pdf(data):
-    pdf = DKA_PDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    
-    # بيانات المريض
-    pdf.set_fill_color(240, 240, 240)
-    pdf.cell(0, 10, "Patient Assessment", 1, 1, 'L', fill=True)
-    pdf.cell(95, 10, f"Weight: {data['weight']} kg", 1)
-    pdf.cell(95, 10, f"Initial pH: {data['ph']}", 1, 1)
-    pdf.cell(95, 10, f"Severity: {data['severity']}", 1)
-    pdf.cell(95, 10, f"Dehydration: {data['dehydration']}%", 1, 1)
-    pdf.ln(5)
-
-    # حسابات السوائل
-    pdf.cell(0, 10, "Fluid Calculations (ml/hr)", 1, 1, 'L', fill=True)
-    pdf.cell(95, 10, f"Hydration Rate (Immaha):", 1)
-    pdf.cell(95, 10, f"{data['hydration_rate']:.2f} ml/hr", 1, 1)
-    pdf.cell(95, 10, f"Deficit Rate (over 48h):", 1)
-    pdf.cell(95, 10, f"{data['deficit_rate']:.2f} ml/hr", 1, 1)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(95, 10, f"TOTAL HOURLY RATE:", 1)
-    pdf.cell(95, 10, f"{data['total_rate']:.2f} ml/hr", 1, 1)
-    pdf.ln(5)
-
-    # الأنسولين والمحاليل
-    pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, "Therapy Recommendations", 1, 1, 'L', fill=True)
-    pdf.cell(0, 10, f"Insulin Rate: {data['insulin_rate']:.2f} Units/hr", 1, 1)
-    pdf.multi_cell(0, 10, f"Current Fluid Choice: {data['fluid_choice']}", 1)
-    
-    pdf.ln(10)
-    pdf.set_font("Arial", 'I', 8)
-    pdf.multi_cell(0, 5, "Medical Disclaimer: This document is a clinical aid. Final decisions must be made by a qualified clinician based on bedside assessment.")
-    
-    return pdf.output()
-
-# --- واجهة التطبيق ---
-st.title("🩺 مساعد تدبير الحماض الكيتوني السكري للأطفال")
-st.markdown("##### تطبيق تفاعلي مبني على بروتوكول BSPED 2024")
-
-# --- المدخلات ---
+# --- القائمة الجانبية للمدخلات ---
 with st.sidebar:
-    st.header("📊 بيانات المريض")
-    weight = st.number_input("الوزن (كجم)", min_value=1.0, max_value=150.0, value=20.0)
+    st.header("📥 إدخال البيانات")
+    weight = st.number_input("الوزن (كجم)", min_value=1.0, max_value=150.0, value=20.0, step=0.1)
     ph = st.number_input("قيمة الـ pH الأولي", min_value=6.7, max_value=7.5, value=7.1, step=0.01)
-    current_bg = st.number_input("الجلوكوز الحالي (mmol/L)", min_value=0.0, value=20.0, step=0.1)
-    bolus_given = st.number_input("سوائل الإنعاش المعطاة (ml)", min_value=0, value=0)
+    current_bg = st.number_input("مستوى السكر الحالي (mmol/L)", min_value=0.0, value=20.0, step=0.1)
+    bolus_given = st.number_input("سوائل الإنعاش المعطاة سابقاً (ml)", min_value=0, value=0, help="أي سوائل وريدية سريعة أُعطيت قبل البدء بالبروتوكول")
     
     st.divider()
-    insulin_dose = st.select_slider("معدل الأنسولين (Units/kg/hr)", options=[0.05, 0.1], value=0.1)
+    insulin_option = st.select_slider("معدل الأنسولين (Units/kg/hr)", options=[0.05, 0.1], value=0.1)
+    
+    st.info("💡 يتم تعويض العجز على مدار 48 ساعة حسب توصيات BSPED.")
 
-# --- المنطق الحسابي (BSPED Logic) ---
+# --- منطق الحسابات الطبية (حسب الدليل المرفق) ---
 
-# 1. تحديد الجفاف والشدة
+# 1. تحديد الشدة ونسبة الجفاف بناءً على pH
 if ph < 7.1:
-    dehydration, severity = 10, "Severe (شديد)"
+    dehydration, severity = 10.0, "Severe (شديد)"
 elif ph < 7.2:
-    dehydration, severity = 5, "Moderate (متوسط)"
+    dehydration, severity = 5.0, "Moderate (متوسط)"
 else:
-    dehydration, severity = 5, "Mild (خفيف)"
+    dehydration, severity = 5.0, "Mild (خفيف)"
 
-# 2. حساب سوائل الإماهة (Maintenance) - قاعدة 2/0.5/0.2
-def calculate_hydration(w):
+# 2. حساب سوائل الإماهة (Maintenance) - قاعدة BSPED المحدثة (2/0.5/0.2)
+def calc_hydration(w):
     if w <= 10:
         rate = w * 2
     elif w <= 20:
@@ -87,79 +40,76 @@ def calculate_hydration(w):
         rate = 25 + (w - 20) * 0.2
     return min(rate, 80) # الحد الأقصى للإماهة 80 مل/ساعة
 
-hydration_rate = calculate_hydration(weight)
+hydration_rate = calc_hydration(weight)
 
-# 3. حساب العجز (Deficit) على 48 ساعة
+# 3. حساب العجز (Deficit) المطروح منه البولس ومقسم على 48 ساعة
 total_deficit_vol = (dehydration * weight * 10) - bolus_given
-deficit_hourly_rate = total_deficit_vol / 48
+hourly_deficit_rate = total_deficit_vol / 48
 
-# 4. المجموع الكلي
-total_hourly_rate = hydration_rate + deficit_hourly_rate
-insulin_rate = weight * insulin_dose
+# 4. المجموع الكلي ومعدل الأنسولين
+total_hourly_rate = hydration_rate + hourly_deficit_rate
+insulin_hourly = weight * insulin_option
 
-# --- عرض النتائج ---
-c1, c2 = st.columns(2)
+# --- عرض النتائج الرئيسية ---
+col1, col2, col3 = st.columns(3)
 
-with c1:
-    st.info(f"**تصنيف الحالة:** {severity}")
-    st.metric("المعدل الكلي للسوائل الوريدية", f"{total_hourly_rate:.2f} ml/hr")
-    st.write(f"💧 سوائل الإماهة: {hydration_rate:.2f} ml/hr")
-    st.write(f"📉 تعويض العجز: {deficit_hourly_rate:.2f} ml/hr")
+with col1:
+    st.metric("شدة الحالة", severity)
+    st.metric("نسبة الجفاف", f"{dehydration}%")
 
-with c2:
-    st.warning("🧪 نوع المحلول والتوصيات")
-    fluid_advice = ""
-    if current_bg > 14:
-        fluid_advice = "0.9% NaCl or Plasma-Lyte 148 + 40mmol/L KCL"
-        st.write("✅ استخدم محلول **بدون جلوكوز**")
-    elif 6 <= current_bg <= 14:
-        fluid_advice = "0.9% NaCl or Plasma-Lyte 148 + 5% Glucose + 40mmol/L KCL"
-        st.write("⚠️ أضف **5% جلوكوز** للمحلول")
-    else:
-        fluid_advice = "0.9% NaCl or Plasma-Lyte 148 + 10% Glucose + 40mmol/L KCL"
-        st.error("🚨 خطر: استخدم **10% جلوكوز**")
-    
-    st.metric("جرعة الأنسولين", f"{insulin_rate:.2f} Units/hr")
+with col2:
+    st.metric("سوائل الإماهة", f"{hydration_rate:.2f} ml/hr")
+    st.metric("تعويض العجز", f"{hourly_deficit_rate:.2f} ml/hr")
+
+with col3:
+    st.success("المعدل الكلي للجريان")
+    st.title(f"{total_hourly_rate:.2f}")
+    st.caption("مل/ساعة (ml/hr)")
 
 st.divider()
 
-# --- قوائم المراقبة ---
-col_m1, col_m2 = st.columns(2)
+# --- منطق الجلوكوز المتغير وتوصية المحلول ---
+st.subheader("🧪 نوع المحلول والتوصية الحالية")
+c_logic1, c_logic2 = st.columns([2, 1])
 
-with col_m1:
-    st.subheader("🚨 علامات وذمة الدماغ")
-    st.checkbox("صداع حاد أو متزايد")
-    st.checkbox("تباطؤ نبض القلب (Bradycardia)")
-    st.checkbox("تدهور مستوى الوعي (GCS)")
-    st.checkbox("قيء متكرر غير مرتبط بالحموضة")
+with c_logic1:
+    if current_bg > 14:
+        st.info(f"**المحلول المطلوب:** Plasma-Lyte 148 أو NaCl 0.9% (بدون جلوكوز).")
+        st.write("📌 يجب إضافة **40 mmol/L** من البوتاسيوم لكل كيس سوائل.")
+    elif 6 <= current_bg <= 14:
+        st.warning(f"**تغيير المحلول:** أضف **5% جلوكوز** للمحلول الوريدي الحالي (Plasma-Lyte أو NaCl 0.9%).")
+        st.write("📌 استمر في إضافة البوتاسيوم بتركيز 40 mmol/L.")
+    else:
+        st.error(f"**تنبيه هبوط سكر:** استخدم محلول يحتوي على **10% جلوكوز**.")
+        st.write("🚨 اتبع بروتوكول علاج الهبوط الحاد إذا قل السكر عن 4 mmol/L.")
 
-with col_m2:
-    st.subheader("✅ معايير التحسن (Resolution)")
+with c_logic2:
+    st.metric("معدل تسريب الأنسولين", f"{insulin_hourly:.2f} U/hr")
+    st.caption("يبدأ الأنسولين بعد 1-2 ساعة من بدء السوائل.")
+
+st.divider()
+
+# --- قوائم المراقبة السريرية ---
+col_obs1, col_obs2 = st.columns(2)
+
+with col_obs1:
+    st.subheader("🚨 مراقبة وذمة الدماغ (كل ساعة)")
+    st.checkbox("هل يوجد صداع شديد أو متزايد؟")
+    st.checkbox("هل هناك انخفاض في مستوى الوعي (GCS)؟")
+    st.checkbox("هل هناك تباطؤ في نبض القلب (Bradycardia)؟")
+    st.write("⚠️ *إذا تم تحديد أي مما سبق، فكر في المانيتول فوراً.*")
+
+with col_obs2:
+    st.subheader("✅ علامات تحسن الحالة (Resolution)")
     st.checkbox("الـ pH > 7.3")
     st.checkbox("الكيتونات في الدم < 1.0 mmol/L")
-    st.checkbox("الطفل قادر على الأكل والشرب")
+    st.checkbox("الطفل قادر على الشرب والأكل بشكل جيد")
+    st.write("💡 *عند تحقق هذه الشروط، ابدأ الأنسولين تحت الجلد ثم أوقف الوريدي بعد ساعة.*")
 
-# --- توليد وتحميل التقرير ---
-report_data = {
-    "weight": weight,
-    "ph": ph,
-    "severity": severity,
-    "dehydration": dehydration,
-    "hydration_rate": hydration_rate,
-    "deficit_rate": deficit_hourly_rate,
-    "total_rate": total_hourly_rate,
-    "insulin_rate": insulin_rate,
-    "fluid_choice": fluid_advice
-}
-
-if st.button("توليد تقرير PDF"):
-    pdf_output = create_pdf(report_data)
-    st.download_button(
-        label="📥 تحميل التقرير الآن",
-        data=pdf_output,
-        file_name=f"DKA_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
-        mime="application/pdf"
-    )
-
+# --- تذييل الصفحة وإخلاء المسؤولية ---
 st.divider()
-st.caption("ملاحظة: هذا التطبيق للاستخدام الاسترشادي فقط. المرجع النهائي هو دليل BSPED المعتمد في مستشفاكم.")
+st.caption("""
+**إخلاء مسؤولية:** هذا التطبيق أداة مساعدة للعمليات الحسابية الطبية بناءً على بروتوكول BSPED 2024. 
+لا يغني هذا التطبيق عن التقييم السريري المباشر وقرار الطبيب المختص. 
+يجب مراقبة المريض بدقة لتجنب مضاعفات وذمة الدماغ.
+""")
