@@ -1,6 +1,6 @@
 # DKA
 
-# [اسم المشروع - مثلاً: DKA Management Pathway]
+# [: DKA Management Pathway]
 
 ## 🩺 Overview
 A Clinical Decision Support System (CDSS) built to automate the management of DKA ** clinical guidelines. 
